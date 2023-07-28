@@ -1,0 +1,89 @@
+#include <Arduino.h>
+#include <ModbusMaster.h>
+
+#define SERIAL_BAUD 9600
+#define PIN_SERIAL_RX 27
+#define PIN_SERIAL_TX 26
+#define PIN_RS485_DE 33
+#define PIN_RS485_RE 32
+
+HardwareSerial RS485Serial(1);
+
+// Initialize the ModbusMaster library
+ModbusMaster node;
+
+void preTransmission() {
+  digitalWrite(PIN_RS485_DE, HIGH);
+  digitalWrite(PIN_RS485_RE, HIGH);
+}
+
+void postTransmission() {
+  digitalWrite(PIN_RS485_DE, LOW);
+  digitalWrite(PIN_RS485_RE, LOW);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PIN_RS485_DE, OUTPUT);
+  pinMode(PIN_RS485_RE, OUTPUT);
+  postTransmission();
+
+  RS485Serial.begin(SERIAL_BAUD, SERIAL_8N1, PIN_SERIAL_RX, PIN_SERIAL_TX);
+
+  // The following parameters might need to be adjusted based on your setup
+/*  node.begin(1, RS485Serial); // Node ID 1, using Serial for communication
+  node.preTransmission(preTransmission);
+  node.postTransmission(postTransmission);*/
+}
+
+/*
+void sendDataToModbusSlave(uint16_t registerAddress, uint16_t data) {
+  digitalWrite(PIN_RS485_DE_RE, HIGH);
+  RS485Serial.write(node.writeSingleRegister(1, registerAddress, data));
+  RS485Serial.flush();
+  digitalWrite(PIN_RS485_DE_RE, LOW);
+}
+*/
+
+void loop() {
+  uint8_t result;
+  uint16_t data;
+  char output[16];
+  int incoming = 0;
+
+  preTransmission();
+  RS485Serial.println("RS485 TEST");
+  RS485Serial.flush();
+  postTransmission();
+
+  Serial.println("RS485Serial frame sent");
+
+  if(RS485Serial.available() > 0) {
+    incoming = RS485Serial.read();
+
+    Serial.print("Data received: ");
+    Serial.println(incoming, DEC);
+  }
+  
+/*
+  // Function code 3: Read Holding Registers
+  // Slave address 1, register address 0, read 1 register
+  result = node.readHoldingRegisters(0x33000, 1);
+
+  // Check if read was successful
+  if (result == node.ku8MBSuccess) {
+    // Get the data from the response
+    data = node.getResponseBuffer(0);
+
+    Serial.print("Data from Modbus Slave: ");
+    Serial.println(data);
+  } else {
+    // Handle the error
+    Serial.println("Modbus read failed - Error: ");
+    //Serial.println(node.lastError());
+  }
+*/
+
+  delay(1000); // Wait for 1 second before the next read
+}
