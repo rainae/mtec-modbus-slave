@@ -1,12 +1,18 @@
 #include <Arduino.h>
 
+#define RS485_BAUD 9600
+#define PIN_RS485_TX 27
+#define PIN_RS485_RX 26
+#define PIN_RS485_REDE 4
+
+//HardwareSerial RS485Serial(1);
 
 void preTransmission() {
-  digitalWrite(4, HIGH);
+  digitalWrite(PIN_RS485_REDE, HIGH);
 }
 
 void postTransmission() {
-  digitalWrite(4, LOW);
+  digitalWrite(PIN_RS485_REDE, LOW);
 }
 
 void blink() {
@@ -19,12 +25,19 @@ void blink() {
 void setup() {
   Serial.begin(9600);
 
-  pinMode(4, OUTPUT);
+  // set RE/DE-pin
+  pinMode(PIN_RS485_REDE, OUTPUT);
+  postTransmission();
+
+  Serial2.begin(RS485_BAUD);
+
+  //RS485Serial.begin(RS485_BAUD, SERIAL_8N1, PIN_RS485_RX, PIN_RS485_TX);
+
+  // set blink-pin
   pinMode(18, OUTPUT);
   digitalWrite(18, LOW);
-  digitalWrite(4, HIGH);
-  //postTransmission();
 
+  // initial status-blink
   blink();
   delay(500);
   blink();
@@ -34,15 +47,18 @@ void setup() {
 }
 
 void loop() {
-  preTransmission();
-  Serial.println("keepalive");
+  Serial.println("serial-keepalive");
   Serial.flush();
+
+  preTransmission();
+  Serial2.println("rs485-keepalive");
+  Serial2.flush();
   postTransmission();
   blink();
 
 
-  if(Serial.available()) {
-    int incoming = Serial.read();
+  if(Serial2.available()) {
+    int incoming = Serial2.read();
     blink();
     preTransmission();
     Serial.print("Data received: ");
