@@ -1,0 +1,109 @@
+UID: mqtt:topic:1eabb7ea9a:5133f914c8
+label: Wechselrichter MQTT
+thingTypeUID: mqtt:topic
+configuration:
+  payloadNotAvailable: OFF
+  availabilityTopic: m-tec/local/alive
+  payloadAvailable: ON
+bridgeUID: mqtt:broker:1eabb7ea9a
+location: Keller
+channels:
+  - id: BMS_SOC
+    channelTypeUID: mqtt:number
+    label: BMS SOC
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_SOC
+      unit: "%"
+  - id: BMS_V
+    channelTypeUID: mqtt:number
+    label: BMS Voltage
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_V
+      unit: V
+  - id: BMS_A
+    channelTypeUID: mqtt:number
+    label: BMS Current
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_A
+      unit: A
+  - id: BMS_Temperature
+    channelTypeUID: mqtt:number
+    label: BMS Temperature
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_Temp
+      unit: °C
+  - id: BMS_Status
+    channelTypeUID: mqtt:number
+    label: BMS Status
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_Status
+  - id: BMS_Error
+    channelTypeUID: mqtt:number
+    label: BMS Error
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_Error
+  - id: BMS_Warning
+    channelTypeUID: mqtt:number
+    label: BMS Warning
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/BMS_Warning
+  - id: AC_Power_Grid
+    channelTypeUID: mqtt:number
+    label: AC Power Grid
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/AC_Power_Grid
+      unit: W
+  - id: AC_Power_Backup
+    channelTypeUID: mqtt:number
+    label: AC Power Backup
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/AC_Power_Backup
+      unit: W
+  - id: PV_Power
+    channelTypeUID: mqtt:number
+    label: PV Power
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/PV_Power
+      unit: W
+  - id: NVP_Power
+    channelTypeUID: mqtt:number
+    label: NVP Power
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/NVP_Power
+      unit: W
+  - id: Battery_Power
+    channelTypeUID: mqtt:number
+    label: Battery Power
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/Battery_Power
+      unit: W
+  - id: INV_Running_State
+    channelTypeUID: mqtt:number
+    label: INV Running State
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/INV_Running_State
+  - id: INV_Fault_Flag1
+    channelTypeUID: mqtt:number
+    label: INV Fault Flag 1
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/INV_Fault_Flag1
+  - id: INV_Fault_Flag2
+    channelTypeUID: mqtt:number
+    label: INV Fault Flag 2
+    description: ""
+    configuration:
+      stateTopic: m-tec/local/INV_Fault_Flag2

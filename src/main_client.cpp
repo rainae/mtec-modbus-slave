@@ -4,7 +4,9 @@
 #include <WiFi.h>
 //#include "ESPOTADASH.h"
 
-#define DEBUG 1
+#define DEBUG 0
+#define INFO 1
+#define INTERVAL 250
 
 // RS485/Modbus-configuration
 #define RS485_BAUD 9600
@@ -29,10 +31,10 @@ const char* hostName = "ESP MTEC Gateway";
 const char* clientid = "esp_mtec_gateway";
 const char* mqtt_username = "";
 const char* mqtt_password = "";
-const char* willTopic = "";
-const char* willQoS = "";
+const char* willTopic = "m-tec/local/alive";
+const uint8_t willQoS = 0;
 boolean willRetain = true;
-const char* willMessage = "";
+const char* willMessage = "OFF";
 boolean cleanSession = true;
 const char* mqttServer = "192.168.0.232";
 const int mqttPort = 1883;
@@ -45,8 +47,8 @@ String basetopic = "m-tec/local";
 
 
 // Wifi access
-
-
+unsigned long previousMillis = 0;
+unsigned long interval = 30000;
 
 typedef struct {
   String _name;
@@ -82,7 +84,7 @@ const Mtec_data bms_error = {
 };
 
 const Mtec_data bms_warning = {
-  "BMS_Error", 33018, 2, "uint32", 0, "BMS Warning Code"
+  "BMS_Warning", 33018, 2, "uint32", 0, "BMS Warning Code"
 };
 
 const Mtec_data power_ac_grid = {
@@ -180,7 +182,8 @@ String process_value(double value_raw, int factor) {
   if (factor == 0) {
     int32_t value = (int32_t) value_raw;
     if (DEBUG) {
-      Serial.print("  factor == 0: process value ");
+      Serial.print(millis());
+      Serial.print(":  factor == 0: process value ");
       Serial.print(value_raw);
       Serial.print(" to ");
       Serial.println(value);
@@ -189,7 +192,8 @@ String process_value(double value_raw, int factor) {
   }
   else if (factor == 1) {
     if (DEBUG) {
-      Serial.print("  factor == 1: return value ");
+      Serial.print(millis());
+      Serial.print(":  factor == 1: return value ");
       Serial.print(value_raw);
       Serial.println(" as is");
     }
@@ -198,7 +202,8 @@ String process_value(double value_raw, int factor) {
   else if (factor < 0 || factor > 1) {
     double value = value_raw * pow(10, factor);
     if (DEBUG) {
-      Serial.print("  factor == ");
+      Serial.print(millis());
+      Serial.print(":  factor == ");
       Serial.print(factor);
       Serial.print(" : process value ");
       Serial.print(value_raw);
@@ -207,12 +212,16 @@ String process_value(double value_raw, int factor) {
     }
     return (String) value;
   }
+  else {
+    return (String) value_raw;
+  }
 }
 
 void connectWifi() {
   delay(10);
   Serial.println();
-  Serial.print("Connecting to ");
+  Serial.print(millis());
+  Serial.print(": Connecting to ");
   Serial.println(ssid);
 
   WiFi.mode(WIFI_STA);
@@ -225,38 +234,65 @@ void connectWifi() {
     delay(500);
   }
   Serial.println();
-  Serial.println("Wifi connected");
-  Serial.print("IP address; ");
+  Serial.print(millis());
+  Serial.println(": Wifi connected");
+  Serial.print(millis());
+  Serial.print(": IP address; ");
   Serial.println(WiFi.localIP());
+  Serial.println();
 }
 
-void send_message(String topic, const char* msg) {
-  if (DEBUG) {
-    Serial.print("Send message to topic " + topic);
+void checkWifi() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    if (DEBUG) {
+      Serial.println();
+      Serial.print(millis());
+      Serial.println(": Check WiFi connected");
+    }
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.print(millis());
+      Serial.println(": Reconnecting to WiFi...");
+      WiFi.disconnect();
+      WiFi.reconnect();
+    }
+
+    if (DEBUG) {
+      Serial.print(millis());
+      Serial.println(": WiFi connected");
+    }
+    previousMillis = currentMillis;
+  }
+}
+
+void send_message(String topic, const char* msg, boolean retain) {
+  if (INFO) {
+    Serial.print(millis());
+    Serial.print(": Send message to topic " + topic);
     Serial.print(" : ");
     Serial.println(msg);
   }
-  mqttclient.publish(topic.c_str(), msg);
+  mqttclient.publish(topic.c_str(), msg, retain);
 }
 
 void reconnect_mqtt() {
   while(!mqttclient.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    Serial.print(millis());
+    Serial.print(": Attempting MQTT connection...");
     String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
 
-    if(mqttclient.connect(clientId.c_str())) {
-      Serial.println("connected");
+    if(mqttclient.connect(clientId.c_str(), willTopic, willQoS, willRetain, willMessage)) {
+      Serial.print(millis());
+      Serial.println(": connected");
       String topic = basetopic + "/alive";
-      String msg = "fubar";
-      send_message(topic, msg.c_str());
-
-      //snprintf(msg, MSG_BUFFER_SIZE, "ON", value);
-      //mqttclient.publish(topic, msg);
-      mqttclient.publish(topic.c_str(), msg.c_str());
+      String msg = "ON";
+      send_message(topic, msg.c_str(), true);
     }
     else {
-      Serial.print("failed, rc=");
+      Serial.print(millis());
+      Serial.print(": failed, rc=");
       Serial.print(mqttclient.state());
       Serial.println(" try again in 5 seconds");
 
@@ -287,19 +323,17 @@ void setup() {
 
   createMtecTable();
 
-  // initial status-blink
-  blink();
-  delay(500);
-  blink();
-  delay(500);
-  blink();
-  delay(2000);
+//  // initial status-blink
+//  blink();
+//  delay(500);
+//  blink();
+//  delay(500);
+//  blink();
+//  delay(2000);
 }
 
 void loop() {
   //ota.loop();
-  Serial.println("serial-keepalive");
-  Serial.flush();
 
   if (!mqttclient.connected()) {
     reconnect_mqtt();
@@ -326,10 +360,13 @@ void loop() {
 
     if (DEBUG) {
       Serial.println();
+      Serial.print(millis());
+      Serial.print(": ");
       Serial.print(i);
       Serial.print(" = ");
       Serial.println("name " + mtec_data[i]._name);
-      Serial.print("read " + String(mtec_data[i]._register_len));
+      Serial.print(millis());
+      Serial.print(": read " + String(mtec_data[i]._register_len));
       Serial.println(" bytes from register " + String(mtec_data[i]._address));
     }
     result = node.readHoldingRegisters(mtec_data[i]._address, mtec_data[i]._register_len);
@@ -362,11 +399,13 @@ void loop() {
       value_out = process_value(value, mtec_data[i]._scale);
 
       if (DEBUG) {
-        Serial.print("result = ");
+        Serial.print(millis());
+        Serial.print(": result = ");
         Serial.println(value);
       }
-      send_message(basetopic + "/" + mtec_data[i]._name, value_out.c_str());
+      send_message(basetopic + "/" + mtec_data[i]._name, value_out.c_str(), false);
     }
-    delay(500);
+    delay(INTERVAL);
   }
+  checkWifi();
 }
