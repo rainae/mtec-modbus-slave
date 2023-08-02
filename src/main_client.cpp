@@ -1,18 +1,52 @@
 #include <Arduino.h>
 #include <ModbusMaster.h>
 #include <PubSubClient.h>
+#include <WiFi.h>
+//#include "ESPOTADASH.h"
 
+#define DEBUG 1
+
+// RS485/Modbus-configuration
 #define RS485_BAUD 9600
 #define PIN_RS485_TX 27
 #define PIN_RS485_RX 26
 #define PIN_RS485_REDE 4
-
 #define SLAVE_ID 247
-#define REGISTER 33000
-
-#define DEBUG 1
-
+//#define REGISTER 33000
 ModbusMaster node;
+
+// ESP OTA Dashboard integration
+const char* ssid = "RRHomeWPA";
+const char* password = "eagle!12";
+const char* hostName = "ESP MTEC Gateway";
+//const char* serverAddress = "http://192.168.0.99:3000";
+//unsigned long heartbeateInterval = 10000;
+//unsigned long registrationInterval = 30000;
+//const char* firmwareVersion = "1.0.0";
+//ESPOTADASH ota(ssid, password, hostName, serverAddress, heartbeateInterval, registrationInterval, firmwareVersion);
+
+// MQTT integration
+const char* clientid = "esp_mtec_gateway";
+const char* mqtt_username = "";
+const char* mqtt_password = "";
+const char* willTopic = "";
+const char* willQoS = "";
+boolean willRetain = true;
+const char* willMessage = "";
+boolean cleanSession = true;
+const char* mqttServer = "192.168.0.232";
+const int mqttPort = 1883;
+#define MSG_BUFFER_SIZE (50)
+char msg[MSG_BUFFER_SIZE];
+int value = 0;
+WiFiClient espClient;
+PubSubClient mqttclient(espClient);
+String basetopic = "m-tec/local";
+
+
+// Wifi access
+
+
 
 typedef struct {
   String _name;
@@ -40,15 +74,15 @@ const Mtec_data bms_temperature = {
 };
 
 const Mtec_data bms_status = {
-  "BMS_Status", 33002, 1, "uint16", 1, "BMS Status Code"
+  "BMS_Status", 33002, 1, "uint16", 0, "BMS Status Code"
 };
 
 const Mtec_data bms_error = {
-  "BMS_Error", 33016, 2, "uint32", 1, "BMS Error Code"
+  "BMS_Error", 33016, 2, "uint32", 0, "BMS Error Code"
 };
 
 const Mtec_data bms_warning = {
-  "BMS_Error", 33018, 2, "uint32", 1, "BMS Warning Code"
+  "BMS_Error", 33018, 2, "uint32", 0, "BMS Warning Code"
 };
 
 const Mtec_data power_ac_grid = {
@@ -72,15 +106,15 @@ const Mtec_data power_battery = {
 };
 
 const Mtec_data inverter_running_state = {
-  "INV_Running_State", 10105, 1, "uint16", 1, "Betriebszustand des Wechselrichters" //0: wait/wait for on-grid; 1: check/self-check; 2: On Grid; 3: fault; 4: flash/firmware update; 5: Off Grid
+  "INV_Running_State", 10105, 1, "uint16", 0, "Betriebszustand des Wechselrichters" //0: wait/wait for on-grid; 1: check/self-check; 2: On Grid; 3: fault; 4: flash/firmware update; 5: Off Grid
 };
 
 const Mtec_data fault_flag1 = {
-  "INV_Fault_Flag1", 10112, 2, "uint32", 1, "Fehler siehe Tabelle 1"
+  "INV_Fault_Flag1", 10112, 2, "uint32", 0, "Fehler siehe Tabelle 1"
 };
 
 const Mtec_data fault_flag2 = {
-  "INV_Fault_Flag2", 10114, 2, "uint32", 1, "Fehler siehe Tabelle 2"
+  "INV_Fault_Flag2", 10114, 2, "uint32", 0, "Fehler siehe Tabelle 2"
 };
 
 /*
@@ -142,9 +176,100 @@ void blink() {
   digitalWrite(18, LOW);
 }
 
+String process_value(double value_raw, int factor) {
+  if (factor == 0) {
+    int32_t value = (int32_t) value_raw;
+    if (DEBUG) {
+      Serial.print("  factor == 0: process value ");
+      Serial.print(value_raw);
+      Serial.print(" to ");
+      Serial.println(value);
+    }
+    return (String) value;
+  }
+  else if (factor == 1) {
+    if (DEBUG) {
+      Serial.print("  factor == 1: return value ");
+      Serial.print(value_raw);
+      Serial.println(" as is");
+    }
+    return (String) value_raw;
+  }
+  else if (factor < 0 || factor > 1) {
+    double value = value_raw * pow(10, factor);
+    if (DEBUG) {
+      Serial.print("  factor == ");
+      Serial.print(factor);
+      Serial.print(" : process value ");
+      Serial.print(value_raw);
+      Serial.print(" to ");
+      Serial.println(value);
+    }
+    return (String) value;
+  }
+}
+
+void connectWifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(hostName);
+  WiFi.begin(ssid, password);
+
+  Serial.println("Connecting to Wifi ...");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print('.');
+    delay(500);
+  }
+  Serial.println();
+  Serial.println("Wifi connected");
+  Serial.print("IP address; ");
+  Serial.println(WiFi.localIP());
+}
+
+void send_message(String topic, const char* msg) {
+  if (DEBUG) {
+    Serial.print("Send message to topic " + topic);
+    Serial.print(" : ");
+    Serial.println(msg);
+  }
+  mqttclient.publish(topic.c_str(), msg);
+}
+
+void reconnect_mqtt() {
+  while(!mqttclient.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    String clientId = "ESP32Client-";
+    clientId += String(random(0xffff), HEX);
+
+    if(mqttclient.connect(clientId.c_str())) {
+      Serial.println("connected");
+      String topic = basetopic + "/alive";
+      String msg = "fubar";
+      send_message(topic, msg.c_str());
+
+      //snprintf(msg, MSG_BUFFER_SIZE, "ON", value);
+      //mqttclient.publish(topic, msg);
+      mqttclient.publish(topic.c_str(), msg.c_str());
+    }
+    else {
+      Serial.print("failed, rc=");
+      Serial.print(mqttclient.state());
+      Serial.println(" try again in 5 seconds");
+
+      delay(5000);
+    }
+  }
+}
 
 void setup() {
   Serial.begin(115200);
+  connectWifi();
+  mqttclient.setServer(mqttServer, mqttPort);
+  //ota.begin();
 
 
   // set RE/DE-pin
@@ -172,9 +297,14 @@ void setup() {
 }
 
 void loop() {
+  //ota.loop();
   Serial.println("serial-keepalive");
   Serial.flush();
 
+  if (!mqttclient.connected()) {
+    reconnect_mqtt();
+  }
+  mqttclient.loop();
 
 //  uint8_t result;
 //  uint16_t data[6];
@@ -190,6 +320,10 @@ void loop() {
     //break;
 
     uint16_t result;
+    double value;
+    String value_out;
+
+
     if (DEBUG) {
       Serial.println();
       Serial.print(i);
@@ -201,41 +335,38 @@ void loop() {
     result = node.readHoldingRegisters(mtec_data[i]._address, mtec_data[i]._register_len);
     if (result == node.ku8MBSuccess) {
       if (mtec_data[i]._register_datatype == "int16") {
-        int16_t value = node.getResponseBuffer(0x00);
-        Serial.print("result = ");
-        Serial.println(value);
+        int16_t value_raw = node.getResponseBuffer(0x00);
+        value = (double) value_raw;
       }
       else if (mtec_data[i]._register_datatype == "uint16") {
-        uint16_t value = node.getResponseBuffer(0x00);
-        Serial.print("result = ");
-        Serial.println(value);
+        uint16_t value_raw = node.getResponseBuffer(0x00);
+        value = (double) value_raw;
       }
       else if (mtec_data[i]._register_datatype == "int32") {
-        int32_t value;
+        int32_t value_raw;
         int16_t msw, lsw;
         msw = node.getResponseBuffer(0x00);
         lsw = node.getResponseBuffer(0x01);
-        value = (int32_t) msw<<16 | lsw;
-        Serial.print("result = ");
-        Serial.println(value);
+        value_raw = (int32_t) msw<<16 | lsw;
+        value = (double) value_raw;
       }
       else if (mtec_data[i]._register_datatype == "uint32") {
-        uint32_t value;
+        uint32_t value_raw;
         uint16_t msw, lsw;
         msw = node.getResponseBuffer(0x00);
         lsw = node.getResponseBuffer(0x01);
-        value = (uint32_t) msw<<16 | lsw;
+        value_raw = (uint32_t) msw<<16 | lsw;
+        value = (double) value_raw;
+      }
+
+      value_out = process_value(value, mtec_data[i]._scale);
+
+      if (DEBUG) {
         Serial.print("result = ");
         Serial.println(value);
       }
-
-      //if (DEBUG) {
-      //  Serial.print("result = ");
-      //  Serial.println(value);
-      //}
+      send_message(basetopic + "/" + mtec_data[i]._name, value_out.c_str());
     }
     delay(500);
   }
-
-  delay(5000); // Wait for 1 second before the next read
 }
