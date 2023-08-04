@@ -63,7 +63,7 @@ typedef struct {
 } Mtec_data;
 
 const Mtec_data bms_soc_data = {
-  "BMS_SOC", 33000, 1, "uint16", -2, "Ladezustand der Batterie", "LOW"
+  "BMS_SOC", 33000, 1, "uint16", -2, "Ladezustand der Batterie", "HIGH"
 };
 
 const Mtec_data bms_voltage = {
