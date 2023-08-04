@@ -4,7 +4,7 @@
 #include <WiFi.h>
 //#include "ESPOTADASH.h"
 
-#define DEBUG 1
+#define DEBUG 0
 #define INFO 1
 #define INTERVAL 250
 
@@ -401,7 +401,19 @@ void loop() {
 //    blink();
 //  } 
   unsigned long current_millis = millis();
-  boolean first_lf_element = true;
+  boolean run_lf_tasks = false;
+  boolean run_checkwifi = false;
+
+  if(current_millis - mqtt_previous_millis >= mqtt_lf_interval) {
+    run_lf_tasks = true;
+    mqtt_previous_millis = current_millis;
+  }
+
+  if (current_millis - wifi_previousMillis >= wifi_interval) {
+    run_checkwifi = true;
+    wifi_previousMillis = current_millis;
+  }  
+
   for (int i = 0; i < MTEC_DATA_COUNT; i++) {
     Mtec_data element = mtec_data[i];
     if (DEBUG) {
@@ -412,25 +424,24 @@ void loop() {
       Serial.println(mqtt_previous_millis);
       Serial.print("element_frequency: ");
       Serial.println(element._frequency);
-      Serial.println();
+      Serial.print("run_lf_tasks: ");
+      Serial.println(run_lf_tasks);
+      Serial.print("run_checkwifi: ");
+      Serial.println(run_checkwifi);
     }
 
     if(element._frequency == "HIGH") {
       process_mqtt_element(mtec_data[i]);
     } 
-    else if (element._frequency == "LOW" && 
-       current_millis - mqtt_previous_millis >= mqtt_lf_interval) {
-      if (first_lf_element) {
-        mqtt_previous_millis = current_millis;
-      }
-      first_lf_element = false;
+    else if (element._frequency == "LOW" && run_lf_tasks) {
       process_mqtt_element(mtec_data[i]);
     }
-  
-    if (current_millis - wifi_previousMillis >= wifi_interval) {
-      wifi_previousMillis = current_millis;
+
+    if(run_checkwifi) { 
       checkWifi();
+      run_checkwifi = false;
     }
+
     delay(INTERVAL);
   }
 }
