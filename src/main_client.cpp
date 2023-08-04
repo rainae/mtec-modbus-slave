@@ -4,7 +4,7 @@
 #include <WiFi.h>
 //#include "ESPOTADASH.h"
 
-#define DEBUG 0
+#define DEBUG 1
 #define INFO 1
 #define INTERVAL 250
 
@@ -41,14 +41,16 @@ const int mqttPort = 1883;
 #define MSG_BUFFER_SIZE (50)
 char msg[MSG_BUFFER_SIZE];
 int value = 0;
+unsigned long mqtt_previous_millis = 0;
+const unsigned long mqtt_lf_interval = 30000;
 WiFiClient espClient;
 PubSubClient mqttclient(espClient);
 String basetopic = "m-tec/local";
 
 
 // Wifi access
-unsigned long previousMillis = 0;
-unsigned long interval = 30000;
+unsigned long wifi_previousMillis = 0;
+unsigned long wifi_interval = 30000;
 
 typedef struct {
   String _name;
@@ -57,66 +59,67 @@ typedef struct {
   String _register_datatype;
   signed int _scale;
   String _description;
+  String _frequency;
 } Mtec_data;
 
 const Mtec_data bms_soc_data = {
-  "BMS_SOC", 33000, 1, "uint16", -2, "Ladezustand der Batterie"
+  "BMS_SOC", 33000, 1, "uint16", -2, "Ladezustand der Batterie", "LOW"
 };
 
 const Mtec_data bms_voltage = {
-  "BMS_V", 30254, 1, "uint16", -1, "Batteriespannung"
+  "BMS_V", 30254, 1, "uint16", -1, "Batteriespannung", "LOW"
 };
 
 const Mtec_data bms_current = {
-  "BMS_A", 30255, 1, "int16", -1, "Batteriestrom"
+  "BMS_A", 30255, 1, "int16", -1, "Batteriestrom", "LOW"
 };
 
 const Mtec_data bms_temperature = {
-  "BMS_Temp", 33003, 1, "int16", -1, "Batterie Temperatur"
+  "BMS_Temp", 33003, 1, "int16", -1, "Batterie Temperatur", "LOW"
 };
 
 const Mtec_data bms_status = {
-  "BMS_Status", 33002, 1, "uint16", 0, "BMS Status Code"
+  "BMS_Status", 33002, 1, "uint16", 0, "BMS Status Code", "LOW"
 };
 
 const Mtec_data bms_error = {
-  "BMS_Error", 33016, 2, "uint32", 0, "BMS Error Code"
+  "BMS_Error", 33016, 2, "uint32", 0, "BMS Error Code", "LOW"
 };
 
 const Mtec_data bms_warning = {
-  "BMS_Warning", 33018, 2, "uint32", 0, "BMS Warning Code"
+  "BMS_Warning", 33018, 2, "uint32", 0, "BMS Warning Code", "LOW"
 };
 
 const Mtec_data power_ac_grid = {
-  "AC_Power_Grid", 11016, 2, "int32", 1, "Leistung am AC Eingang des Wechselrichters"
+  "AC_Power_Grid", 11016, 2, "int32", 1, "Leistung am AC Eingang des Wechselrichters", "HIGH"
 };
 
 const Mtec_data power_ac_backup = {
-  "AC_Power_Backup", 30230, 2, "int32", 1, "Leistung am Backup Ausgang des Wechselrichters"
+  "AC_Power_Backup", 30230, 2, "int32", 1, "Leistung am Backup Ausgang des Wechselrichters", "HIGH"
 };
 
 const Mtec_data power_pv = {
-  "PV_Power", 11028, 2, "uint32", 1, "PV Erzeugung Gesamt"
+  "PV_Power", 11028, 2, "uint32", 1, "PV Erzeugung Gesamt", "HIGH"
 };
 
 const Mtec_data power_nvp = {
-  "NVP_Power", 11000, 2, "int32", 1, "Leistung am NVP Zaehler"
+  "NVP_Power", 11000, 2, "int32", 1, "Leistung am NVP Zaehler", "HIGH"
 };
 
 const Mtec_data power_battery = {
-  "Battery_Power", 30258, 2, "int32", 1, "Lade/Entladeleistung der Batterie"
+  "Battery_Power", 30258, 2, "int32", 1, "Lade/Entladeleistung der Batterie", "HIGH"
 };
 
 const Mtec_data inverter_running_state = {
-  "INV_Running_State", 10105, 1, "uint16", 0, "Betriebszustand des Wechselrichters" //0: wait/wait for on-grid; 1: check/self-check; 2: On Grid; 3: fault; 4: flash/firmware update; 5: Off Grid
+  "INV_Running_State", 10105, 1, "uint16", 0, "Betriebszustand des Wechselrichters", "LOW" //0: wait/wait for on-grid; 1: check/self-check; 2: On Grid; 3: fault; 4: flash/firmware update; 5: Off Grid
 };
 
 const Mtec_data fault_flag1 = {
-  "INV_Fault_Flag1", 10112, 2, "uint32", 0, "Fehler siehe Tabelle 1"
+  "INV_Fault_Flag1", 10112, 2, "uint32", 0, "Fehler siehe Tabelle 1", "LOW"
 };
 
 const Mtec_data fault_flag2 = {
-  "INV_Fault_Flag2", 10114, 2, "uint32", 0, "Fehler siehe Tabelle 2"
+  "INV_Fault_Flag2", 10114, 2, "uint32", 0, "Fehler siehe Tabelle 2", "LOW"
 };
 
 /*
@@ -144,21 +147,22 @@ const Mtec_data fault_flag2 = {
 
 */
 
-Mtec_data mtec_data[15];
+#define MTEC_DATA_COUNT 15
+Mtec_data mtec_data[MTEC_DATA_COUNT];
 
 void createMtecTable() {
-  mtec_data[0] = bms_soc_data;
-  mtec_data[1] = bms_voltage;
-  mtec_data[2] = bms_current;
-  mtec_data[3] = bms_temperature;
-  mtec_data[4] = bms_status;
-  mtec_data[5] = bms_error;
-  mtec_data[6] = bms_warning;
-  mtec_data[7] = power_ac_grid;
-  mtec_data[8] = power_ac_backup;
-  mtec_data[9] = power_pv;
-  mtec_data[10] = power_nvp;
-  mtec_data[11] = power_battery;
+  mtec_data[0] = power_ac_grid;
+  mtec_data[1] = power_ac_backup;
+  mtec_data[2] = power_pv;
+  mtec_data[3] = power_nvp;
+  mtec_data[4] = power_battery;
+  mtec_data[5] = bms_soc_data;
+  mtec_data[6] = bms_voltage;
+  mtec_data[7] = bms_current;
+  mtec_data[8] = bms_temperature;
+  mtec_data[9] = bms_status;
+  mtec_data[10] = bms_error;
+  mtec_data[11] = bms_warning;
   mtec_data[12] = inverter_running_state;
   mtec_data[13] = fault_flag1;
   mtec_data[14] = fault_flag2;
@@ -243,26 +247,22 @@ void connectWifi() {
 }
 
 void checkWifi() {
-  unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    if (DEBUG) {
-      Serial.println();
-      Serial.print(millis());
-      Serial.println(": Check WiFi connected");
-    }
-    
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.print(millis());
-      Serial.println(": Reconnecting to WiFi...");
-      WiFi.disconnect();
-      WiFi.reconnect();
-    }
+  if (DEBUG) {
+    Serial.println();
+    Serial.print(millis());
+    Serial.println(": Check WiFi connected");
+  }
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.print(millis());
+    Serial.println(": Reconnecting to WiFi...");
+    WiFi.disconnect();
+    WiFi.reconnect();
+  }
 
-    if (DEBUG) {
-      Serial.print(millis());
-      Serial.println(": WiFi connected");
-    }
-    previousMillis = currentMillis;
+  if (DEBUG) {
+    Serial.print(millis());
+    Serial.println(": WiFi connected");
   }
 }
 
@@ -298,6 +298,57 @@ void reconnect_mqtt() {
 
       delay(5000);
     }
+  }
+}
+
+void process_mqtt_element(Mtec_data element) {
+  uint16_t result;
+  double value;
+  String value_out;
+
+  if (DEBUG) {
+    Serial.println();
+    Serial.print(millis());
+    Serial.println(": name " + element._name);
+    Serial.print(millis());
+    Serial.print(": read " + String(element._register_len));
+    Serial.println(" bytes from register " + String(element._address));
+  }
+  result = node.readHoldingRegisters(element._address, element._register_len);
+  if (result == node.ku8MBSuccess) {
+    if (element._register_datatype == "int16") {
+      int16_t value_raw = node.getResponseBuffer(0x00);
+      value = (double) value_raw;
+    }
+    else if (element._register_datatype == "uint16") {
+      uint16_t value_raw = node.getResponseBuffer(0x00);
+      value = (double) value_raw;
+    }
+    else if (element._register_datatype == "int32") {
+      int32_t value_raw;
+      int16_t msw, lsw;
+      msw = node.getResponseBuffer(0x00);
+      lsw = node.getResponseBuffer(0x01);
+      value_raw = (int32_t) msw<<16 | lsw;
+      value = (double) value_raw;
+    }
+    else if (element._register_datatype == "uint32") {
+      uint32_t value_raw;
+      uint16_t msw, lsw;
+      msw = node.getResponseBuffer(0x00);
+      lsw = node.getResponseBuffer(0x01);
+      value_raw = (uint32_t) msw<<16 | lsw;
+      value = (double) value_raw;
+    }
+
+    value_out = process_value(value, element._scale);
+
+    if (DEBUG) {
+      Serial.print(millis());
+      Serial.print(": result = ");
+      Serial.println(value);
+    }
+    send_message(basetopic + "/" + element._name, value_out.c_str(), false);
   }
 }
 
@@ -349,63 +400,37 @@ void loop() {
 //    Serial.println(node.getResponseBuffer(0x00));
 //    blink();
 //  } 
-
-  for (int i = 0; i < 15; i++) {
-    //break;
-
-    uint16_t result;
-    double value;
-    String value_out;
-
-
+  unsigned long current_millis = millis();
+  boolean first_lf_element = true;
+  for (int i = 0; i < MTEC_DATA_COUNT; i++) {
+    Mtec_data element = mtec_data[i];
     if (DEBUG) {
       Serial.println();
-      Serial.print(millis());
-      Serial.print(": ");
-      Serial.print(i);
-      Serial.print(" = ");
-      Serial.println("name " + mtec_data[i]._name);
-      Serial.print(millis());
-      Serial.print(": read " + String(mtec_data[i]._register_len));
-      Serial.println(" bytes from register " + String(mtec_data[i]._address));
+      Serial.print("current_millis: ");
+      Serial.println(current_millis);
+      Serial.print("mqtt_previous_millis: ");
+      Serial.println(mqtt_previous_millis);
+      Serial.print("element_frequency: ");
+      Serial.println(element._frequency);
+      Serial.println();
     }
-    result = node.readHoldingRegisters(mtec_data[i]._address, mtec_data[i]._register_len);
-    if (result == node.ku8MBSuccess) {
-      if (mtec_data[i]._register_datatype == "int16") {
-        int16_t value_raw = node.getResponseBuffer(0x00);
-        value = (double) value_raw;
-      }
-      else if (mtec_data[i]._register_datatype == "uint16") {
-        uint16_t value_raw = node.getResponseBuffer(0x00);
-        value = (double) value_raw;
-      }
-      else if (mtec_data[i]._register_datatype == "int32") {
-        int32_t value_raw;
-        int16_t msw, lsw;
-        msw = node.getResponseBuffer(0x00);
-        lsw = node.getResponseBuffer(0x01);
-        value_raw = (int32_t) msw<<16 | lsw;
-        value = (double) value_raw;
-      }
-      else if (mtec_data[i]._register_datatype == "uint32") {
-        uint32_t value_raw;
-        uint16_t msw, lsw;
-        msw = node.getResponseBuffer(0x00);
-        lsw = node.getResponseBuffer(0x01);
-        value_raw = (uint32_t) msw<<16 | lsw;
-        value = (double) value_raw;
-      }
 
-      value_out = process_value(value, mtec_data[i]._scale);
-
-      if (DEBUG) {
-        Serial.print(millis());
-        Serial.print(": result = ");
-        Serial.println(value);
+    if(element._frequency == "HIGH") {
+      process_mqtt_element(mtec_data[i]);
+    } 
+    else if (element._frequency == "LOW" && 
+       current_millis - mqtt_previous_millis >= mqtt_lf_interval) {
+      if (first_lf_element) {
+        mqtt_previous_millis = current_millis;
       }
-      send_message(basetopic + "/" + mtec_data[i]._name, value_out.c_str(), false);
+      first_lf_element = false;
+      process_mqtt_element(mtec_data[i]);
+    }
+  
+    if (current_millis - wifi_previousMillis >= wifi_interval) {
+      wifi_previousMillis = current_millis;
+      checkWifi();
     }
     delay(INTERVAL);
   }
-  checkWifi();
 }
