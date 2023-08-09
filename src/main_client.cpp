@@ -246,6 +246,16 @@ void connectWifi() {
   Serial.println();
 }
 
+void send_message(String topic, const char* msg, boolean retain) {
+  if (INFO) {
+    Serial.print(millis());
+    Serial.print(": Send message to topic " + topic);
+    Serial.print(" : ");
+    Serial.println(msg);
+  }
+  mqttclient.publish(topic.c_str(), msg, retain);
+}
+
 void checkWifi() {
   if (DEBUG) {
     Serial.println();
@@ -264,16 +274,10 @@ void checkWifi() {
     Serial.print(millis());
     Serial.println(": WiFi connected");
   }
-}
 
-void send_message(String topic, const char* msg, boolean retain) {
-  if (INFO) {
-    Serial.print(millis());
-    Serial.print(": Send message to topic " + topic);
-    Serial.print(" : ");
-    Serial.println(msg);
-  }
-  mqttclient.publish(topic.c_str(), msg, retain);
+  String topic = basetopic + "/alive";
+  String msg = "ON";
+  send_message(topic, msg.c_str(), true);
 }
 
 void reconnect_mqtt() {
