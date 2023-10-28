@@ -265,11 +265,10 @@ void checkWifi() {
   
   if (WiFi.status() != WL_CONNECTED) {
     Serial.print(millis());
-    Serial.println(": Reconnecting to WiFi...");
-    WiFi.disconnect();
-    WiFi.reconnect();
+    Serial.println(": Restart ESP - WiFi disconnected ...");
+    ESP.restart();
   }
-
+/*
   if (DEBUG) {
     Serial.print(millis());
     Serial.println(": WiFi connected");
@@ -278,6 +277,7 @@ void checkWifi() {
   String topic = basetopic + "/alive";
   String msg = "ON";
   send_message(topic, msg.c_str(), true);
+*/
 }
 
 void reconnect_mqtt() {
