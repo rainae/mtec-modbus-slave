@@ -281,7 +281,8 @@ void checkWifi() {
 }
 
 void reconnect_mqtt() {
-  while(!mqttclient.connected()) {
+  int i = 0;
+  while(!mqttclient.connected() && i < 10) {
     Serial.print(millis());
     Serial.print(": Attempting MQTT connection...");
     String clientId = "ESP32Client-";
@@ -293,15 +294,17 @@ void reconnect_mqtt() {
       String topic = basetopic + "/alive";
       String msg = "ON";
       send_message(topic, msg.c_str(), true);
+      break;
     }
     else {
       Serial.print(millis());
       Serial.print(": failed, rc=");
       Serial.print(mqttclient.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.println(" try again in 3 seconds");
 
-      delay(5000);
+      delay(3000);
     }
+    i++;
   }
 }
 
