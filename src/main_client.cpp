@@ -7,7 +7,7 @@
 
 #define DEBUG 0
 #define INFO 1
-#define INTERVAL 250
+#define INTERVAL 200
 
 // RS485/Modbus-configuration
 #define RS485_BAUD 9600
@@ -498,6 +498,9 @@ void loop() {
     }
 
     if(run_arduinoOTA) {
+      //resend Alive message
+      send_message(basetopic + "/alive", "ON", true);
+      
       ArduinoOTA.handle();
       Serial.print(current_millis);
       Serial.println(": DEBUG - OTA-handler called");
