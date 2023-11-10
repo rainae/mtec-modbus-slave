@@ -2,6 +2,7 @@
 #include <ModbusMaster.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <ArduinoOTA.h>
 //#include "ESPOTADASH.h"
 
 #define DEBUG 0
@@ -20,7 +21,9 @@ ModbusMaster node;
 // ESP OTA Dashboard integration
 const char* ssid = "RRHomeWPA";
 const char* password = "eagle!12";
-const char* hostName = "ESP MTEC Gateway";
+String hostName = "esp-mtec-gateway";
+unsigned long ota_previousMillis = 0;
+unsigned long ota_interval = 5000;
 //const char* serverAddress = "http://192.168.0.99:3000";
 //unsigned long heartbeateInterval = 10000;
 //unsigned long registrationInterval = 30000;
@@ -229,7 +232,8 @@ void connectWifi() {
   Serial.println(ssid);
 
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname(hostName);
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  WiFi.setHostname(hostName.c_str() );
   WiFi.begin(ssid, password);
 
   Serial.println("Connecting to Wifi ...");
@@ -243,6 +247,9 @@ void connectWifi() {
   Serial.print(millis());
   Serial.print(": IP address; ");
   Serial.println(WiFi.localIP());
+  Serial.print(millis());
+  Serial.print(": Hostname; ");
+  Serial.println(WiFi.getHostname());
   Serial.println();
 }
 
@@ -284,7 +291,7 @@ void reconnect_mqtt() {
   int i = 0;
   while(!mqttclient.connected() && i < 10) {
     Serial.print(millis());
-    Serial.print(": Attempting MQTT connection...");
+    Serial.println(": Attempting MQTT connection...");
     String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
 
@@ -359,6 +366,40 @@ void process_mqtt_element(Mtec_data element) {
   }
 }
 
+void init_ArduinoOTA() {
+  ArduinoOTA.setHostname("esp-mtec-gateway");
+
+  ArduinoOTA
+    .onStart([]() {
+      Serial.println("DEBUG: ArduinoOTA started");
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+  Serial.println("DEBUG: ArduinoOTA initialized");
+}
+
 void setup() {
   Serial.begin(115200);
   connectWifi();
@@ -388,6 +429,7 @@ void setup() {
 //  delay(500);
 //  blink();
 //  delay(2000);
+  init_ArduinoOTA();
 }
 
 void loop() {
@@ -410,6 +452,7 @@ void loop() {
   unsigned long current_millis = millis();
   boolean run_lf_tasks = false;
   boolean run_checkwifi = false;
+  boolean run_arduinoOTA = false;
 
   if(current_millis - mqtt_previous_millis >= mqtt_lf_interval) {
     run_lf_tasks = true;
@@ -419,7 +462,12 @@ void loop() {
   if (current_millis - wifi_previousMillis >= wifi_interval) {
     run_checkwifi = true;
     wifi_previousMillis = current_millis;
-  }  
+  }
+
+  if (current_millis - ota_previousMillis >= ota_interval) {
+    run_arduinoOTA = true;
+    ota_previousMillis = current_millis;
+  }
 
   for (int i = 0; i < MTEC_DATA_COUNT; i++) {
     Mtec_data element = mtec_data[i];
@@ -447,6 +495,13 @@ void loop() {
     if(run_checkwifi) { 
       checkWifi();
       run_checkwifi = false;
+    }
+
+    if(run_arduinoOTA) {
+      ArduinoOTA.handle();
+      Serial.print(current_millis);
+      Serial.println(": DEBUG - OTA-handler called");
+      run_arduinoOTA = false;
     }
 
     delay(INTERVAL);
